@@ -15,7 +15,7 @@ The repository is structured as follows:
 ```bash
 chXX
 ├── bin
-├── Makefile
+├── makefile
 ├── README.md
 └── src
     ├── <exercise_name>.go
@@ -29,12 +29,12 @@ chXX
 
 ## Local setup
 
-To setup the repository locally, clone it and run `make setup` in the root directory:
+To setup the repository locally, clone it and run `make` in the root directory:
 
 ```bash
 git clone git@github.com:ahmeducf/tlpi.git
 cd tlpi
-make setup
+make
 ```
 
 ## Building the solutions
