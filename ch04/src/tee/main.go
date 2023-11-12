@@ -21,7 +21,7 @@ THE SOFTWARE.
 */
 package main
 
-import "github.com/ahmeducf/tlpi/ch4/tee/cmd"
+import "github.com/ahmeducf/tlpi/ch04/src/tee/cmd"
 
 func main() {
 	cmd.Execute()
