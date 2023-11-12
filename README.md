@@ -1,6 +1,6 @@
 # The Linux Programming Interface
 
-This repository contains the source code for my solutions to the programming exercises in [_The Linux Programming Interface_](http://man7.org/tlpi/) book, by Michael Kerrisk.
+This repository contains the source code for my solutions to the programming exercises in [_The Linux Programming Interface_](https://man7.org/tlpi/) book, by Michael Kerrisk.
 
 > [!NOTE]
 >
