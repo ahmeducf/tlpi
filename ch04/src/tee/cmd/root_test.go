@@ -8,16 +8,23 @@ import (
 	"testing"
 )
 
-func createPipe(t *testing.T) (*os.File, *os.File, error) {
+func createPipe(i interface{}) (*os.File, *os.File, error) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	t.Cleanup(func() {
+	cleanup := func() {
 		r.Close()
 		w.Close()
-	})
+	}
+
+	switch v := i.(type) {
+	case *testing.T:
+		v.Cleanup(cleanup)
+	case *testing.B:
+		v.Cleanup(cleanup)
+	}
 
 	return r, w, err
 }
@@ -275,18 +282,13 @@ func TestAppendToFile(t *testing.T) {
 
 func teeIteration(b *testing.B, args []string) {
 	originalStdin := os.Stdin
-	rStdout, wStdout, err := os.Pipe()
+	_, wStdout, err := createPipe(b)
 	if err != nil {
 		b.Fatalf("error: %v", err)
 	}
-	defer func() {
-		rStdout.Close()
-		wStdout.Close()
-		os.Stdout = originalStdin
-	}()
 	os.Stdout = wStdout
 
-	rStdin, wStdin, err := os.Pipe()
+	rStdin, wStdin, err := createPipe(b)
 	if err != nil {
 		b.Fatalf("error: %v", err)
 	}
@@ -300,8 +302,8 @@ func teeIteration(b *testing.B, args []string) {
 		rootCmd.Execute()
 	}
 
-	rStdin.Close()
 	os.Stdin = originalStdin
+	os.Stdout = originalStdin
 }
 
 func generateFileNames(n int) []string {
