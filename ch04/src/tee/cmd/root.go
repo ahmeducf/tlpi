@@ -22,24 +22,83 @@ THE SOFTWARE.
 package cmd
 
 import (
+	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
 )
 
+func openFiles(cmd *cobra.Command, args []string) ([]*os.File, []func() error) {
+	isAppendFlag, err := cmd.Flags().GetBool("append")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	var files []*os.File
+	var closeFuncs []func() error
+
+	for _, arg := range args {
+		flag := os.O_WRONLY | os.O_CREATE
+		if isAppendFlag {
+			flag |= os.O_APPEND
+		} else {
+			flag |= os.O_TRUNC
+		}
+		f, err := os.OpenFile(arg, flag, 0666)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		closeFuncs = append(closeFuncs, f.Close)
+		files = append(files, f)
+	}
+
+	return files, closeFuncs
+}
+
+func tee(cmd *cobra.Command, args []string) {
+	files, closeFuncs := openFiles(cmd, args)
+	defer func() {
+		for _, f := range closeFuncs {
+			err := f()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+		}
+	}()
+
+	files = append(files, os.Stdout)
+
+	var inputBuf [1024]byte
+	for {
+		n, err := os.Stdin.Read(inputBuf[:])
+
+		for _, f := range files {
+			count, err := f.Write(inputBuf[:n])
+			if count != n || err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+		}
+
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	}
+}
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "ch4",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	Use:   "tee",
+	Short: "Copy standard input to each FILE, and also to standard output.",
+	Run: tee,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -60,5 +119,5 @@ func init() {
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.Flags().BoolP("append", "a", false, "append the output to the files rather than overwriting them.")
 }
