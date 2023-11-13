@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -59,6 +60,12 @@ func TestWriteToStdout(t *testing.T) {
 
 func TestWriteToFile(t *testing.T) {
 	originalStdin := os.Stdin
+	originalStdout := os.Stdout
+	_, wStdout, err := createPipe(t)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	os.Stdout = wStdout
 
 	rStdin, wStdin, err := createPipe(t)
 	if err != nil {
@@ -73,6 +80,7 @@ func TestWriteToFile(t *testing.T) {
 	rootCmd.Execute()
 
 	os.Stdin = originalStdin
+	os.Stdout = originalStdout
 
 	f, err := os.Open("/tmp/test.txt")
 	if err != nil {
@@ -96,6 +104,12 @@ func TestWriteToFile(t *testing.T) {
 
 func TestWriteToMultipleFiles(t *testing.T) {
 	originalStdin := os.Stdin
+	originalStdout := os.Stdout
+	_, wStdout, err := createPipe(t)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	os.Stdout = wStdout
 
 	rStdin, wStdin, err := createPipe(t)
 	if err != nil {
@@ -110,6 +124,7 @@ func TestWriteToMultipleFiles(t *testing.T) {
 	rootCmd.Execute()
 
 	os.Stdin = originalStdin
+	os.Stdout = originalStdout
 
 	f, err := os.Open("/tmp/test.txt")
 	if err != nil {
@@ -220,6 +235,12 @@ func TestAppendToFile(t *testing.T) {
 	f.Close()
 
 	originalStdin := os.Stdin
+	originalStdout := os.Stdout
+	_, wStdout, err := createPipe(t)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	os.Stdout = wStdout
 
 	rStdin, wStdin, err := createPipe(t)
 	if err != nil {
@@ -234,6 +255,7 @@ func TestAppendToFile(t *testing.T) {
 	rootCmd.Execute()
 
 	os.Stdin = originalStdin
+	os.Stdout = originalStdout
 
 	f, err = os.Open("/tmp/test.txt")
 	if err != nil {
@@ -248,5 +270,58 @@ func TestAppendToFile(t *testing.T) {
 
 	if actual != expected {
 		t.Errorf("expected: %v, actual: %v", expected, actual)
+	}
+}
+
+func teeIteration(b *testing.B, args []string) {
+	originalStdin := os.Stdin
+	rStdout, wStdout, err := os.Pipe()
+	if err != nil {
+		b.Fatalf("error: %v", err)
+	}
+	defer func() {
+		rStdout.Close()
+		wStdout.Close()
+		os.Stdout = originalStdin
+	}()
+	os.Stdout = wStdout
+
+	rStdin, wStdin, err := os.Pipe()
+	if err != nil {
+		b.Fatalf("error: %v", err)
+	}
+	os.Stdin = rStdin
+
+	wStdin.Write([]byte("Hello, World!\n"))
+	wStdin.Close()
+
+	for i := 0; i < b.N; i++ {
+		rootCmd.SetArgs(args)
+		rootCmd.Execute()
+	}
+
+	rStdin.Close()
+	os.Stdin = originalStdin
+}
+
+func generateFileNames(n int) []string {
+	var args []string
+	for i := 0; i < n; i++ {
+		args = append(args, "/tmp/test"+fmt.Sprint(i)+".txt")
+	}
+	return args
+}
+
+func BenchmarkTee(b *testing.B) {
+	for _, v := range []int{1, 10, 100, 1000} {
+		args := generateFileNames(v)
+		b.Run(fmt.Sprintf("Tee-%d", v), func(b *testing.B) {
+			teeIteration(b, args)
+		})
+
+		err := os.RemoveAll("/tmp/test*.txt")
+		if err != nil {
+			b.Fatalf("error: %v", err)
+		}
 	}
 }
