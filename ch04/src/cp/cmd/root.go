@@ -22,24 +22,199 @@ THE SOFTWARE.
 package cmd
 
 import (
+	"fmt"
+	"io"
 	"os"
+	"path"
 
 	"github.com/spf13/cobra"
 )
 
+func cpDir(src, dest string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	err = os.MkdirAll(path.Join(dest, srcInfo.Name()), srcInfo.Mode())
+	if err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			err = cpDir(path.Join(src, entry.Name()), path.Join(dest, entry.Name()))
+			if err != nil {
+				return err
+			}
+		} else {
+			err = cpFileToDir(path.Join(src, entry.Name()), path.Join(dest, srcInfo.Name()))
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func cpFileToDir(src, dest string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	destFile, err := os.Create(path.Join(dest, srcInfo.Name()))
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, srcFile)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func cpFileToFile(src string, dest string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	defer srcFile.Close()
+
+	destFile, err := os.Create(dest)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, srcFile)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+
+	return nil
+}
+
+func cp(cmd *cobra.Command, args []string) {
+	if len(args) == 2 {
+		// copy {file | directory} to {file | directory}
+		source := args[0]
+		sourceInfo, err := os.Stat(source)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cp: cannot stat '%s': No such file or directory\n", source)
+			os.Exit(1)
+		}
+		isSourceDir := sourceInfo.IsDir()
+
+		dest := args[1]
+		destInfo, err := os.Stat(dest)
+		var isDestDir bool
+		if err != nil {
+			isDestDir = false
+		} else {
+			isDestDir = destInfo.IsDir()
+		}
+
+		if isSourceDir && isDestDir {
+			isRecursive, err := cmd.Flags().GetBool("recursive")
+			if err != nil {
+				os.Exit(1)
+			}
+			if !isRecursive {
+				fmt.Fprintf(os.Stderr, "cp: -r not specified; omitting directory '%s'\n", source)
+				os.Exit(1)
+			}
+
+			err = cpDir(source, dest)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "cp: cannot copy directory '%s' to directory '%s'\n", source, dest)
+				os.Exit(1)
+			}
+		} else if !isSourceDir && !isDestDir {
+			err := cpFileToFile(source, dest)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "cp: cannot copy file '%s' to file '%s'\n", source, dest)
+				os.Exit(1)
+			}
+		} else if !isSourceDir && isDestDir {
+			err := cpFileToDir(source, dest)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "cp: cannot copy file '%s' to directory '%s'\n", source, dest)
+				os.Exit(1)
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "cp: cannot copy directory '%s' to file '%s'\n", source, dest)
+			os.Exit(1)
+		}
+	} else {
+		// copy multiple files to directory
+		dest := args[len(args)-1]
+		destInfo, err := os.Stat(dest)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cp: cannot stat '%s': No such file or directory\n", dest)
+			os.Exit(1)
+		}
+		isDestDir := destInfo.IsDir()
+
+		if !isDestDir {
+			fmt.Fprintf(os.Stderr, "cp: target '%s' is not a directory\n", dest)
+			os.Exit(1)
+		}
+
+		for _, source := range args[:len(args)-1] {
+			sourceInfo, err := os.Stat(source)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "cp: cannot stat '%s': No such file or directory\n", source)
+				os.Exit(1)
+			}
+			isSourceDir := sourceInfo.IsDir()
+			if isSourceDir {
+				isRecursive, err := cmd.Flags().GetBool("recursive")
+				if err != nil {
+					os.Exit(1)
+				}
+				if !isRecursive {
+					fmt.Fprintf(os.Stderr, "cp: -r not specified; omitting directory '%s'\n", source)
+					continue
+				}
+				err = cpDir(source, dest)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "cp: cannot copy directory '%s' to directory '%s'\n", source, dest)
+					os.Exit(1)
+				}
+			} else {
+				err := cpFileToDir(source, dest)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "cp: cannot copy file '%s' to directory '%s'\n", source, dest)
+					os.Exit(1)
+				}
+			}
+		}
+	}
+}
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "ch4",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	Use:   "cp {SOURCE DEST | SOURCE... DIRECTORY}",
+	Short: "Copy SOURCE to DEST, or multiple SOURCE(s) to DIRECTORY.",
+	Run:   cp,
+	Args:  cobra.MinimumNArgs(2),
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -60,5 +235,5 @@ func init() {
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.Flags().BoolP("recursive", "r", false, "copy directories recursively")
 }

@@ -98,7 +98,7 @@ func tee(cmd *cobra.Command, args []string) {
 var rootCmd = &cobra.Command{
 	Use:   "tee",
 	Short: "Copy standard input to each FILE, and also to standard output.",
-	Run: tee,
+	Run:   tee,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
